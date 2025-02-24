@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
+
+import 'FileExplorerScreen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -13,7 +14,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: WifiDirectScreen(),
+      home: FileExplorerScreen(),
     );
   }
 }
@@ -29,29 +30,7 @@ class _WifiDirectScreenState extends State<WifiDirectScreen> {
   static const platform = MethodChannel("wifi_direct");
   List<String> devices = [];
 
-  /// 📌 Kiểm tra và yêu cầu quyền trước khi tìm kiếm thiết bị
-  Future<bool> _requestPermissions() async {
-    final statuses = await [
-      Permission.nearbyWifiDevices,
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
-
-    // ✅ Kiểm tra tất cả quyền đã được cấp
-    return statuses.values.every((status) => status.isGranted);
-  }
-
-  /// 🔍 Tìm kiếm thiết bị sau khi đảm bảo có quyền
   Future<void> discoverPeers() async {
-    bool hasPermission = await _requestPermissions();
-    if (!hasPermission) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Bạn cần cấp đủ quyền để tiếp tục.")),
-      );
-      return;
-    }
-
     try {
       final List<dynamic> result = await platform.invokeMethod("discoverPeers");
       setState(() {
@@ -59,9 +38,17 @@ class _WifiDirectScreenState extends State<WifiDirectScreen> {
       });
     } on PlatformException catch (e) {
       print("⚡ Lỗi: ${e.message}");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("⚡ Lỗi: ${e.message}")),
-      );
+    }
+  }
+
+  Future<void> connectToDevice(String deviceAddress) async {
+    try {
+      final String result = await platform.invokeMethod("connectToDevice", {
+        "deviceAddress": deviceAddress,
+      });
+      print("🔗 $result");
+    } on PlatformException catch (e) {
+      print("⚡ Kết nối thất bại: ${e.message}");
     }
   }
 
@@ -76,14 +63,11 @@ class _WifiDirectScreenState extends State<WifiDirectScreen> {
             child: const Text("🔍 Tìm thiết bị"),
           ),
           Expanded(
-            child: devices.isEmpty
-                ? const Center(child: Text("⚡ Chưa tìm thấy thiết bị nào."))
-                : ListView.builder(
+            child: ListView.builder(
               itemCount: devices.length,
               itemBuilder: (context, index) => ListTile(
                 title: Text(devices[index]),
-                onTap: () =>
-                    print("⚡ Kết nối đến: ${devices[index]}"),
+                onTap: () => connectToDevice(devices[index]),
               ),
             ),
           ),
