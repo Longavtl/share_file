@@ -46,9 +46,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
-  flutter_video_reels_example:
-    path: ../flutter_video_reels_example
   permission_handler: ^11.0.1
+  file_picker: ^9.0.1
+  fluttertoast: ^8.0.0
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

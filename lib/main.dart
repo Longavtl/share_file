@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -11,9 +15,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: WifiDirectScreen(),
+      title: 'Wi-Fi Direct',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: const WifiDirectScreen(),
     );
   }
 }
@@ -22,71 +28,91 @@ class WifiDirectScreen extends StatefulWidget {
   const WifiDirectScreen({super.key});
 
   @override
-  State<WifiDirectScreen> createState() => _WifiDirectScreenState();
+  _WifiDirectScreenState createState() => _WifiDirectScreenState();
 }
 
 class _WifiDirectScreenState extends State<WifiDirectScreen> {
   static const platform = MethodChannel("wifi_direct");
   List<String> devices = [];
+  String? connectedDevice;
 
-  /// 📌 Kiểm tra và yêu cầu quyền trước khi tìm kiếm thiết bị
-  Future<bool> _requestPermissions() async {
-    final statuses = await [
-      Permission.nearbyWifiDevices,
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
-
-    // ✅ Kiểm tra tất cả quyền đã được cấp
-    return statuses.values.every((status) => status.isGranted);
+  @override
+  void initState() {
+    super.initState();
+    _requestPermissions();
   }
 
-  /// 🔍 Tìm kiếm thiết bị sau khi đảm bảo có quyền
-  Future<void> discoverPeers() async {
-    bool hasPermission = await _requestPermissions();
-    if (!hasPermission) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Bạn cần cấp đủ quyền để tiếp tục.")),
-      );
-      return;
-    }
+  Future<void> _requestPermissions() async {
+    await Permission.location.request();
+    await Permission.storage.request();
+  }
 
+  Future<void> discoverDevices() async {
     try {
-      final List<dynamic> result = await platform.invokeMethod("discoverPeers");
+      final List<Object?> result = await platform.invokeMethod("discoverDevices");
       setState(() {
-        devices = result.cast<String>();
+        devices = result.map((e) => e.toString()).toList();
       });
     } on PlatformException catch (e) {
-      print("⚡ Lỗi: ${e.message}");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("⚡ Lỗi: ${e.message}")),
-      );
+      print("Error: ${e.message}");
+    }
+  }
+
+  Future<void> connectToDevice(String device) async {
+    try {
+      final bool success = await platform.invokeMethod("connectToDevice", {"device": device});
+      if (success) {
+        setState(() {
+          connectedDevice = device;
+        });
+      }
+    } on PlatformException catch (e) {
+      print("Error: ${e.message}");
+    }
+  }
+
+
+  Future<void> sendFile() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles();
+    if (result != null) {
+      String filePath = result.files.single.path!;
+      try {
+        await platform.invokeMethod("sendFile", {"filePath": filePath});
+      } on PlatformException catch (e) {
+        print("Error: ${e.message}");
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("WiFi Direct (Kotlin)")),
+      appBar: AppBar(title: const Text("Wi-Fi Direct File Transfer")),
       body: Column(
         children: [
-          ElevatedButton(
-            onPressed: discoverPeers,
-            child: const Text("🔍 Tìm thiết bị"),
-          ),
-          Expanded(
-            child: devices.isEmpty
-                ? const Center(child: Text("⚡ Chưa tìm thấy thiết bị nào."))
-                : ListView.builder(
-              itemCount: devices.length,
-              itemBuilder: (context, index) => ListTile(
-                title: Text(devices[index]),
-                onTap: () =>
-                    print("⚡ Kết nối đến: ${devices[index]}"),
+          ElevatedButton(onPressed: discoverDevices, child: const Text("Tìm thiết bị")),
+          if (devices.isNotEmpty)
+            Expanded(
+              child: ListView.builder(
+                itemCount: devices.length,
+                itemBuilder: (context, index) {
+                  return ListTile(
+                    title: Text(devices[index]),
+                    trailing: ElevatedButton(
+                      onPressed: () => connectToDevice(devices[index]),
+                      child: const Text("Kết nối"),
+                    ),
+                  );
+                },
               ),
             ),
-          ),
+          if (connectedDevice != null)
+            Column(
+              children: [
+                Text("Đã kết nối với: $connectedDevice"),
+                ElevatedButton(onPressed: sendFile, child: const Text("Gửi File"))
+              ],
+            ),
         ],
       ),
     );
