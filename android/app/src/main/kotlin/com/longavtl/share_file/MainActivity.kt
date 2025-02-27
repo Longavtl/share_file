@@ -1,6 +1,8 @@
 package com.longavtl.share_file
+import android.net.Uri
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.wifi.p2p.*
@@ -8,6 +10,7 @@ import android.net.wifi.p2p.WifiP2pManager.*
 import android.os.Bundle
 import android.os.Environment
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -42,6 +45,52 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    private fun startServer() {
+        try {
+            val serverSocket = ServerSocket(8889)
+            Log.d("WiFiDirect", "Máy nhận đang chờ file...")
+
+            while (true) {
+                val clientSocket = serverSocket.accept()
+                Thread {
+                    try {
+                        val inputStream = DataInputStream(clientSocket.getInputStream())
+
+                        val fileName = inputStream.readUTF()
+                        val fileSize = inputStream.readLong()
+
+                        Log.d("WiFiDirect", "Nhận file: $fileName ($fileSize bytes)")
+
+                        val fileUri = saveFileToDownloads(fileName)
+                        if (fileUri != null) {
+                            contentResolver.openOutputStream(fileUri)?.use { outputStream ->
+                                inputStream.copyTo(outputStream)
+                            }
+                            Log.d("WiFiDirect", "File nhận thành công: ${fileUri.path}")
+                        } else {
+                            Log.e("WiFiDirect", "Lỗi khi lưu file vào Download")
+                        }
+
+                        clientSocket.close()
+                    } catch (e: Exception) {
+                        Log.e("WiFiDirect", "Lỗi khi nhận file", e)
+                    }
+                }.start()
+            }
+        } catch (e: Exception) {
+            Log.e("WiFiDirect", "Lỗi khi khởi động server", e)
+        }
+    }
+
+    private fun saveFileToDownloads(fileName: String): Uri? {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+        }
+        return contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
     }
 
     private fun discoverDevices(result: MethodChannel.Result) {
@@ -119,39 +168,6 @@ class MainActivity : FlutterActivity() {
                 result.error("ERROR", "File transfer failed: ${e.message}", null)
             }
         }.start()
-    }
-
-    private fun startServer() {
-        try {
-            val serverSocket = ServerSocket(8889)
-            Log.d("WiFiDirect", "Máy nhận đang chờ file...")
-
-            while (true) {
-                val clientSocket = serverSocket.accept()
-                Thread {
-                    try {
-                        val inputStream = DataInputStream(clientSocket.getInputStream())
-
-                        val fileName = inputStream.readUTF()
-                        val fileSize = inputStream.readLong()
-                        val file = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
-
-                        Log.d("WiFiDirect", "Nhận file: $fileName ($fileSize bytes)")
-
-                        file.outputStream().use { outputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-
-                        Log.d("WiFiDirect", "File nhận thành công: ${file.absolutePath}")
-                        clientSocket.close()
-                    } catch (e: Exception) {
-                        Log.e("WiFiDirect", "Lỗi khi nhận file", e)
-                    }
-                }.start()
-            }
-        } catch (e: Exception) {
-            Log.e("WiFiDirect", "Lỗi khi khởi động server", e)
-        }
     }
 
     private fun checkPermissions(): Boolean {
